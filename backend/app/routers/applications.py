@@ -6,11 +6,14 @@ from sqlalchemy.orm import Session
 import os
 from dotenv import load_dotenv
 
+from sqlalchemy import func
+
 from ..database import get_db
 from ..models import Application, ApplicationStatus, User
 from ..schemas import (
     ApplicationCreate,
     ApplicationResponse,
+    ApplicationStatsResponse,
     ApplicationUpdate,
 )
 
@@ -84,15 +87,46 @@ def create_application(
     db.refresh(application)
 
     return application
-
-
 @router.get(
-    "/",
-    response_model=list[ApplicationResponse],
+    "/stats",
+    response_model=ApplicationStatsResponse,
 )
+def get_application_stats(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    results = (
+        db.query(
+            Application.status,
+            func.count(Application.id),
+        )
+        .filter(
+            Application.user_id == current_user.id
+        )
+        .group_by(Application.status)
+        .all()
+    )
+
+    # Initialize every status with zero
+    stats = {
+        status.value: 0
+        for status in ApplicationStatus
+    }
+
+    # Fill counts from database
+    for status, count in results:
+        stats[status.value] = count
+
+    total = sum(stats.values())
+
+    return {
+        "total": total,
+        "by_status": stats,
+    }
+@router.get("/", response_model=list[ApplicationResponse])
 def get_applications(
     search: str | None = None,
-    status_filter: ApplicationStatus | None = None,
+    status_filter: str | None = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -102,21 +136,23 @@ def get_applications(
 
     if search:
         search_value = f"%{search}%"
-
         query = query.filter(
             (Application.company.ilike(search_value))
             | (Application.position.ilike(search_value))
         )
 
     if status_filter:
-        query = query.filter(
-            Application.status == status_filter
-        )
+        try:
+            status_enum = ApplicationStatus(status_filter)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid status: {status_filter}",
+            )
 
-    return query.order_by(
-        Application.created_at.desc()
-    ).all()
+        query = query.filter(Application.status == status_enum)
 
+    return query.order_by(Application.created_at.desc()).all()
 
 @router.get(
     "/{application_id}",

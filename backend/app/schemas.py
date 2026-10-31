@@ -46,6 +46,31 @@ class ApplicationUpdate(BaseModel):
         max_length=255,
     )
 
+    location: str | None = Field(
+        default=None,
+        max_length=255,
+    )
+
+    status: ApplicationStatus | None = None
+
+    job_url: str | None = None
+
+    salary: str | None = None
+
+    applied_at: datetime | None = None
+
+class ApplicationStatsResponse(BaseModel):
+    total: int
+    by_status: dict[str, int]  
+
+
+
+    position: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=255,
+    )
+
     location: str | None = None
     status: ApplicationStatus | None = None
     job_url: str | None = None
